@@ -30,6 +30,6 @@ jobs:
       uses: actions/upload-artifact@v3.1.3
       with:
         name: iris
-        path: Iris/build/Iris-*-*.jar
+        path: build/libs/Iris-*.jar
         if-no-files-found: error
         retention-days: 90
