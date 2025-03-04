@@ -19,6 +19,7 @@
 package com.volmit.iris.core.commands;
 
 import com.volmit.iris.Iris;
+import com.volmit.iris.core.IrisSettings;
 import com.volmit.iris.core.gui.PregeneratorJob;
 import com.volmit.iris.core.pregenerator.LazyPregenerator;
 import com.volmit.iris.core.pregenerator.PregenTask;
@@ -43,75 +44,36 @@ public class CommandPregen implements DecreeExecutor {
             @Param(description = "The world to pregen", contextual = true)
             World world,
             @Param(aliases = "middle", description = "The center location of the pregen. Use \"me\" for your current location", defaultValue = "0,0")
-            Vector center,
-            @Param(aliases = "method", description = "The pregen method that will get used. Lazy or Async", defaultValue = "async")
-            String method
-    ) {
-        if(method.equals("async") || method.equals("lazy")){
-            if (method.equalsIgnoreCase("async")) {
-                try {
-                    if (sender().isPlayer() && access() == null) {
-                        sender().sendMessage(C.RED + "The engine access for this world is null!");
-                        sender().sendMessage(C.RED + "Please make sure the world is loaded & the engine is initialized. Generate a new chunk, for example.");
-                    }
-                    radius = Math.max(radius, 1024);
-                    int w = (radius >> 9 + 1) * 2;
-                    IrisToolbelt.pregenerate(PregenTask
-                            .builder()
-                            .center(new Position2(center.getBlockX() >> 9, center.getBlockZ() >> 9))
-                            .width(w)
-                            .height(w)
-                            .build(), world);
-                    String msg = C.GREEN + "Pregen started in " + C.GOLD + world.getName() + C.GREEN + " of " + C.GOLD + (radius * 2) + C.GREEN + " by " + C.GOLD + (radius * 2) + C.GREEN + " blocks from " + C.GOLD + center.getX() + "," + center.getZ();
-                    sender().sendMessage(msg);
-                    Iris.info(msg);
-                } catch (Throwable e) {
-                    sender().sendMessage(C.RED + "Epic fail. See console.");
-                    Iris.reportError(e);
-                    e.printStackTrace();
-                }
+            Vector center
+            ) {
+        try {
+            if (sender().isPlayer() && access() == null) {
+                sender().sendMessage(C.RED + "The engine access for this world is null!");
+                sender().sendMessage(C.RED + "Please make sure the world is loaded & the engine is initialized. Generate a new chunk, for example.");
             }
-            if (method.equalsIgnoreCase("lazy")) {
-                String worldName = world.getName();
-                try {
-                    if (sender().isPlayer() && access() == null) {
-                        sender().sendMessage(C.RED + "The engine access for this world is null!");
-                        sender().sendMessage(C.RED + "Please make sure the world is loaded & the engine is initialized. Generate a new chunk, for example.");
-                    }
-
-                    LazyPregenerator.LazyPregenJob pregenJob = LazyPregenerator.LazyPregenJob.builder()
-                            .world(worldName)
-                            .healingPosition(0)
-                            .healing(false)
-                            .chunksPerMinute(999999999)
-                            .radiusBlocks(radius)
-                            .position(0)
-                            .build();
-
-                    LazyPregenerator pregenerator = new LazyPregenerator(pregenJob, new File("plugins/Iris/lazygen.json"));
-                    pregenerator.start();
-
-                    String msg = C.GREEN + "Pregen started in " + C.GOLD + worldName + C.GREEN + " of " + C.GOLD + (radius * 2) + C.GREEN + " by " + C.GOLD + (radius * 2) + C.GREEN + " blocks from " + C.GOLD + center.getX() + "," + center.getZ();
-                    sender().sendMessage(msg);
-                    Iris.info(msg);
-                } catch (Throwable e) {
-                    sender().sendMessage(C.RED + "Epic fail. See console.");
-                    Iris.reportError(e);
-                    e.printStackTrace();
-                }
-            }
-        } else {
-            sender().sendMessage(C.RED + "Please use a valid method.");
-
+            radius = Math.max(radius, 1024);
+            int w = (radius >> 9 + 1) * 2;
+            IrisToolbelt.pregenerate(PregenTask
+                    .builder()
+                    .center(new Position2(center.getBlockX() >> 9, center.getBlockZ() >> 9))
+                    .gui(true)
+                    .width(w)
+                    .height(w)
+                    .build(), world);
+            String msg = C.GREEN + "Pregen started in " + C.GOLD + world.getName() + C.GREEN + " of " + C.GOLD + (radius * 2) + C.GREEN + " by " + C.GOLD + (radius * 2) + C.GREEN + " blocks from " + C.GOLD + center.getX() + "," + center.getZ();
+            sender().sendMessage(msg);
+            Iris.info(msg);
+        } catch (Throwable e) {
+            sender().sendMessage(C.RED + "Epic fail. See console.");
+            Iris.reportError(e);
+            e.printStackTrace();
         }
-
     }
 
     @Decree(description = "Stop the active pregeneration task", aliases = "x")
     public void stop() {
         if (PregeneratorJob.shutdownInstance()) {
             Iris.info( C.BLUE + "Finishing up mca region...");
-            sender().sendMessage(C.DARK_BLUE + "Stopped pregeneration task");
         } else {
             sender().sendMessage(C.YELLOW + "No active pregeneration tasks to stop");
         }

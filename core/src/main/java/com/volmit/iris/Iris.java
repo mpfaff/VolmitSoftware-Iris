@@ -30,17 +30,18 @@ import com.volmit.iris.core.loader.IrisData;
 import com.volmit.iris.core.nms.INMS;
 import com.volmit.iris.core.nms.v1X.NMSBinding1X;
 import com.volmit.iris.core.pregenerator.LazyPregenerator;
-import com.volmit.iris.core.service.ChunkHandlerSVC;
 import com.volmit.iris.core.service.StudioSVC;
 import com.volmit.iris.core.tools.IrisToolbelt;
+import com.volmit.iris.core.tools.IrisWorldCreator;
 import com.volmit.iris.engine.EnginePanic;
 import com.volmit.iris.engine.object.IrisCompat;
 import com.volmit.iris.engine.object.IrisDimension;
 import com.volmit.iris.engine.object.IrisWorld;
 import com.volmit.iris.engine.platform.BukkitChunkGenerator;
 import com.volmit.iris.engine.platform.DummyChunkGenerator;
-import com.volmit.iris.engine.safeguard.IrisSafeguard;
-import com.volmit.iris.engine.safeguard.UtilsSFG;
+import com.volmit.iris.core.safeguard.IrisSafeguard;
+import com.volmit.iris.core.safeguard.UtilsSFG;
+import com.volmit.iris.engine.platform.PlatformChunkGenerator;
 import com.volmit.iris.util.collection.KList;
 import com.volmit.iris.util.collection.KMap;
 import com.volmit.iris.util.exceptions.IrisException;
@@ -56,7 +57,6 @@ import com.volmit.iris.util.math.RNG;
 import com.volmit.iris.util.misc.getHardware;
 import com.volmit.iris.util.parallel.MultiBurst;
 import com.volmit.iris.util.plugin.IrisService;
-import com.volmit.iris.util.plugin.Metrics;
 import com.volmit.iris.util.plugin.VolmitPlugin;
 import com.volmit.iris.util.plugin.VolmitSender;
 import com.volmit.iris.util.reflect.ShadeFix;
@@ -66,10 +66,11 @@ import com.volmit.iris.util.scheduling.ShurikenQueue;
 import io.papermc.lib.PaperLib;
 import net.kyori.adventure.platform.bukkit.BukkitAudiences;
 import net.kyori.adventure.text.serializer.ComponentSerializer;
-import org.bukkit.Bukkit;
-import org.bukkit.GameMode;
-import org.bukkit.Location;
-import org.bukkit.WorldCreator;
+import org.bstats.bukkit.Metrics;
+import org.bstats.charts.DrilldownPie;
+import org.bstats.charts.SimplePie;
+import org.bstats.charts.SingleLineChart;
+import org.bukkit.*;
 import org.bukkit.block.data.BlockData;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
@@ -77,32 +78,31 @@ import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
-import org.bukkit.event.Event;
-import org.bukkit.event.HandlerList;
-import org.bukkit.event.Listener;
+import org.bukkit.event.*;
 import org.bukkit.generator.BiomeProvider;
 import org.bukkit.generator.ChunkGenerator;
 import org.bukkit.plugin.IllegalPluginAccessException;
 import org.bukkit.plugin.Plugin;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import oshi.SystemInfo;
 
 import java.io.*;
 import java.lang.annotation.Annotation;
-import java.lang.management.ManagementFactory;
-import java.lang.management.OperatingSystemMXBean;
+import java.math.RoundingMode;
 import java.net.URL;
-import java.util.Date;
-import java.util.Map;
+import java.text.NumberFormat;
+import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
-import static com.volmit.iris.engine.safeguard.IrisSafeguard.unstablemode;
-import static com.volmit.iris.engine.safeguard.ServerBootSFG.passedserversoftware;
-import static com.volmit.iris.util.misc.getHardware.getCPUModel;
-import static com.volmit.iris.util.misc.getHardware.getCPUThreads;
+import static com.volmit.iris.core.safeguard.IrisSafeguard.*;
+import static com.volmit.iris.core.safeguard.ServerBootSFG.passedserversoftware;
 
 @SuppressWarnings("CanBeFinal")
 public class Iris extends VolmitPlugin implements Listener {
-    public static final String OVERWORLD_TAG = "3800";
+    public static final String OVERWORLD_TAG = "31010";
 
     private static final Queue<Runnable> syncJobs = new ShurikenQueue<>();
 
@@ -127,6 +127,10 @@ public class Iris extends VolmitPlugin implements Listener {
     private KMap<Class<? extends IrisService>, IrisService> services;
 
     public static VolmitSender getSender() {
+        if (sender == null) {
+            sender = new VolmitSender(Bukkit.getConsoleSender());
+            sender.setTag(instance.getTag());
+        }
         return sender;
     }
 
@@ -193,10 +197,10 @@ public class Iris extends VolmitPlugin implements Listener {
 
     public static void msg(String string) {
         try {
-            sender.sendMessage(string);
+            getSender().sendMessage(string);
         } catch (Throwable e) {
             try {
-                System.out.println(instance.getTag() + string.replaceAll("(<([^>]+)>)", ""));
+                instance.getLogger().info(instance.getTag() + string.replaceAll("(<([^>]+)>)", ""));
             } catch (Throwable ignored1) {
 
             }
@@ -350,7 +354,7 @@ public class Iris extends VolmitPlugin implements Listener {
         }
     }
 
-    private static int getJavaVersion() {
+    public static int getJavaVersion() {
         String version = System.getProperty("java.version");
         if (version.startsWith("1.")) {
             version = version.substring(2, 3);
@@ -361,6 +365,13 @@ public class Iris extends VolmitPlugin implements Listener {
             }
         }
         return Integer.parseInt(version);
+    }
+
+    public static String getJava() {
+        String javaRuntimeName = System.getProperty("java.vm.name");
+        String javaRuntimeVendor = System.getProperty("java.vendor");
+        String javaRuntimeVersion = System.getProperty("java.vm.version");
+        return String.format("%s %s (build %s)", javaRuntimeName, javaRuntimeVendor, javaRuntimeVersion);
     }
 
     public static void reportErrorChunk(int x, int z, Throwable e, String extra) {
@@ -425,7 +436,7 @@ public class Iris extends VolmitPlugin implements Listener {
             }
 
             pw.close();
-            System.out.println("DUMPED! See " + fi.getAbsolutePath());
+            Iris.info("DUMPED! See " + fi.getAbsolutePath());
         } catch (Throwable e) {
             e.printStackTrace();
         }
@@ -442,18 +453,15 @@ public class Iris extends VolmitPlugin implements Listener {
     private static void fixShading() {
         ShadeFix.fix(ComponentSerializer.class);
     }
-    private ChunkHandlerSVC chunkHandlerSVC;
     private void enable() {
         instance = this;
         services = new KMap<>();
+        setupAudience();
         initialize("com.volmit.iris.core.service").forEach((i) -> services.put((Class<? extends IrisService>) i.getClass(), (IrisService) i));
         INMS.get();
         IO.delete(new File("iris"));
-        setupAudience();
         IrisSafeguard.IrisSafeguardSystem();
-        sender = new VolmitSender(Bukkit.getConsoleSender());
-        sender.setTag(getTag());
-        instance = this;
+        getSender().setTag(getTag());
         compat = IrisCompat.configured(getDataFile("compat.json"));
         linkMultiverseCore = new MultiverseCoreLink();
         linkMythicMobs = new MythicMobsLink();
@@ -470,14 +478,8 @@ public class Iris extends VolmitPlugin implements Listener {
             J.s(this::setupPapi);
             J.a(ServerConfigurator::configure, 20);
             splash();
-            UtilsSFG.UnstableMode();
-            UtilsSFG.SupportedServerSoftware();
-            UtilsSFG.printIncompatibleWarnings();
-            UtilsSFG.unstablePrompt();
-            if(IrisSettings.get().getGeneral().useIntegratedChunkHandler) {
-                chunkHandlerSVC = new ChunkHandlerSVC(this);
-                Iris.info(C.LIGHT_PURPLE + "Started Intergrated ChunkHandlerSVC");
-            }
+            UtilsSFG.splash();
+
             autoStartStudio();
             checkForBukkitWorlds();
             IrisToolbelt.retainMantleDataForSlice(String.class.getCanonicalName());
@@ -509,14 +511,14 @@ public class Iris extends VolmitPlugin implements Listener {
                     continue;
                 }
 
-                Iris.info("2 World: %s | Generator: %s", s, generator);
-
-                if (Bukkit.getWorlds().stream().anyMatch(w -> w.getName().equals(s))) {
+                if (Bukkit.getWorld(s) != null)
                     continue;
-                }
+
+                Iris.info("Loading World: %s | Generator: %s", s, generator);
 
                 Iris.info(C.LIGHT_PURPLE + "Preparing Spawn for " + s + "' using Iris:" + generator + "...");
                 new WorldCreator(s)
+                        .type(IrisWorldCreator.IRIS)
                         .generator(getDefaultWorldGenerator(s, generator))
                         .environment(IrisData.loadAnyDimension(generator).getEnvironment())
                         .createWorld();
@@ -532,7 +534,7 @@ public class Iris extends VolmitPlugin implements Listener {
             Iris.info("Starting up auto Studio!");
             try {
                 Player r = new KList<>(getServer().getOnlinePlayers()).getRandom();
-                Iris.service(StudioSVC.class).open(r != null ? new VolmitSender(r) : sender, 1337, IrisSettings.get().getGenerator().getDefaultWorldType(), (w) -> {
+                Iris.service(StudioSVC.class).open(r != null ? new VolmitSender(r) : getSender(), 1337, IrisSettings.get().getGenerator().getDefaultWorldType(), (w) -> {
                     J.s(() -> {
                         for (Player i : getServer().getOnlinePlayers()) {
                             i.setGameMode(GameMode.SPECTATOR);
@@ -599,9 +601,11 @@ public class Iris extends VolmitPlugin implements Listener {
         if (unstablemode) {
             return C.BOLD + "" + C.DARK_GRAY + "[" + C.BOLD + "" + C.RED + "Iris" + C.BOLD + C.DARK_GRAY + "]" + C.RESET + "" + C.GRAY + ": ";
         }
-        else {
-            return C.BOLD + "" + C.DARK_GRAY + "[" + C.BOLD + "" + C.IRIS + "Iris" + C.BOLD + C.DARK_GRAY + "]" + C.RESET + "" + C.GRAY + ": ";
+        if (warningmode) {
+            return C.BOLD + "" + C.DARK_GRAY + "[" + C.BOLD + "" + C.GOLD + "Iris" + C.BOLD + C.DARK_GRAY + "]" + C.RESET + "" + C.GRAY + ": ";
         }
+        return C.BOLD + "" + C.DARK_GRAY + "[" + C.BOLD + "" + C.IRIS + "Iris" + C.BOLD + C.DARK_GRAY + "]" + C.RESET + "" + C.GRAY + ": ";
+
     }
 
     private boolean setupChecks() {
@@ -659,7 +663,50 @@ public class Iris extends VolmitPlugin implements Listener {
 
     private void bstats() {
         if (IrisSettings.get().getGeneral().isPluginMetrics()) {
-            J.s(() -> new Metrics(Iris.instance, 8757));
+            J.s(() -> {
+                var metrics = new Metrics(Iris.instance, 24220);
+                metrics.addCustomChart(new SingleLineChart("custom_dimensions", () -> Bukkit.getWorlds()
+                        .stream()
+                        .filter(IrisToolbelt::isIrisWorld)
+                        .mapToInt(w -> 1)
+                        .sum()));
+
+                metrics.addCustomChart(new DrilldownPie("used_packs", () -> Bukkit.getWorlds().stream()
+                        .map(IrisToolbelt::access)
+                        .filter(Objects::nonNull)
+                        .map(PlatformChunkGenerator::getEngine)
+                        .collect(Collectors.toMap(engine -> engine.getDimension().getLoadKey(), engine -> {
+                            var hash32 = engine.getHash32().getNow(null);
+                            if (hash32 == null) return Map.of();
+                            int version = engine.getDimension().getVersion();
+                            String checksum = Long.toHexString(hash32);
+
+                            return Map.of("v" + version + " (" + checksum + ")", 1);
+                        }, (a, b) -> {
+                            Map<String, Integer> merged = new HashMap<>(a);
+                            b.forEach((k, v) -> merged.merge(k, v, Integer::sum));
+                            return merged;
+                        }))));
+
+
+                var info = new SystemInfo().getHardware();
+                var cpu = info.getProcessor().getProcessorIdentifier();
+                var mem = info.getMemory();
+                metrics.addCustomChart(new SimplePie("cpu_model", cpu::getName));
+
+                var nf = NumberFormat.getInstance(Locale.ENGLISH);
+                nf.setMinimumFractionDigits(0);
+                nf.setMaximumFractionDigits(2);
+                nf.setRoundingMode(RoundingMode.HALF_UP);
+
+                metrics.addCustomChart(new DrilldownPie("memory", () -> {
+                    double total = mem.getTotal() * 1E-9;
+                    double alloc = Math.min(total, Runtime.getRuntime().maxMemory() * 1E-9);
+                    return Map.of(nf.format(alloc), Map.of(nf.format(total), 1));
+                }));
+
+                postShutdown.add(metrics::shutdown);
+            });
         }
     }
 
@@ -731,7 +778,7 @@ public class Iris extends VolmitPlugin implements Listener {
         File ff = new File(w.worldFolder(), "iris/pack");
         if (!ff.exists() || ff.listFiles().length == 0) {
             ff.mkdirs();
-            service(StudioSVC.class).installIntoWorld(sender, dim.getLoadKey(), ff.getParentFile());
+            service(StudioSVC.class).installIntoWorld(getSender(), dim.getLoadKey(), w.worldFolder());
         }
 
         return new BukkitChunkGenerator(w, false, ff, dim.getLoadKey());
@@ -747,6 +794,9 @@ public class Iris extends VolmitPlugin implements Listener {
         String[] info = {"", "", "", "", "", padd2 + C.IRIS + " Iris", padd2 + C.GRAY + " by " + "<rainbow>Volmit Software", padd2 + C.GRAY + " v" + C.IRIS + getDescription().getVersion()};
         if (unstablemode) {
              info = new String[]{"", "", "", "", "", padd2 + C.RED + " Iris", padd2 + C.GRAY + " by " + C.DARK_RED + "Volmit Software", padd2 + C.GRAY + " v" + C.RED + getDescription().getVersion()};
+        }
+        if (warningmode) {
+            info = new String[]{"", "", "", "", "", padd2 + C.GOLD + " Iris", padd2 + C.GRAY + " by " + C.GOLD + "Volmit Software", padd2 + C.GRAY + " v" + C.GOLD + getDescription().getVersion()};
         }
 
         String[] splashstable = {
@@ -776,32 +826,45 @@ public class Iris extends VolmitPlugin implements Listener {
                 padd + C.GRAY + "" + C.RED + "                     '(((())))'   " + C.DARK_GRAY + "&&&&&&&&" + C.GRAY + "&&&&&&&@@",
                 padd + C.GRAY + "                               " + C.DARK_GRAY + "@@@" + C.GRAY + "@@@@@@@@@@@@@@"
         };
-        String[] splash = unstablemode ? splashunstable : splashstable; // Choose the appropriate splash array based on unstablemode
-
-
-        OperatingSystemMXBean osBean = ManagementFactory.getOperatingSystemMXBean();
-        String osArch = osBean.getArch();
-        String osName = osBean.getName();
+        String[] splashwarning = {
+                padd + C.GRAY + "   @@@@@@@@@@@@@@" + C.DARK_GRAY + "@@@",
+                padd + C.GRAY + " @@&&&&&&&&&" + C.DARK_GRAY + "&&&&&&" + C.GOLD + "   .(((()))).                     ",
+                padd + C.GRAY + "@@@&&&&&&&&" + C.DARK_GRAY + "&&&&&" + C.GOLD + "  .((((((())))))).                  ",
+                padd + C.GRAY + "@@@&&&&&" + C.DARK_GRAY + "&&&&&&&" + C.GOLD + "  ((((((((()))))))))               " + C.GRAY + " @",
+                padd + C.GRAY + "@@@&&&&" + C.DARK_GRAY + "@@@@@&" + C.GOLD + "    ((((((((-)))))))))              " + C.GRAY + " @@",
+                padd + C.GRAY + "@@@&&" + C.GOLD + "            ((((((({ }))))))))           " + C.GRAY + " &&@@@",
+                padd + C.GRAY + "@@" + C.GOLD + "               ((((((((-)))))))))    " + C.DARK_GRAY + "&@@@@@" + C.GRAY + "&&&&@@@",
+                padd + C.GRAY + "@" + C.GOLD + "                ((((((((()))))))))  " + C.DARK_GRAY + "&&&&&" + C.GRAY + "&&&&&&&@@@",
+                padd + C.GRAY + "" + C.GOLD + "                  '((((((()))))))'  " + C.DARK_GRAY + "&&&&&" + C.GRAY + "&&&&&&&&@@@",
+                padd + C.GRAY + "" + C.GOLD + "                     '(((())))'   " + C.DARK_GRAY + "&&&&&&&&" + C.GRAY + "&&&&&&&@@",
+                padd + C.GRAY + "                               " + C.DARK_GRAY + "@@@" + C.GRAY + "@@@@@@@@@@@@@@"
+        };
+        String[] splash;
+        File freeSpace = new File(Bukkit.getWorldContainer() + ".");
+        if (unstablemode) {
+            splash = splashunstable;
+        } else if (warningmode) {
+            splash = splashwarning;
+        } else {
+            splash = splashstable;
+        }
 
         if (!passedserversoftware) {
             Iris.info("Server type & version: " + C.RED + Bukkit.getVersion());
         } else { Iris.info("Server type & version: " + Bukkit.getVersion()); }
-
-        Iris.info("Server OS: " + osName + " (" + osArch + ")");
-
-        if(unstablemode) Iris.info("Server Cpu: " + C.DARK_RED + getCPUModel());
-
-        if(getCPUModel().contains("Intel")) Iris.info("Server Cpu: " + C.BLUE + getCPUModel());
-        if(getCPUModel().contains("Ryzen")) Iris.info("Server Cpu: " + C.RED + getCPUModel());
-        if(!getCPUModel().contains("Intel") && !getCPUModel().contains("Ryzen")) Iris.info("Server Cpu: " + C.DARK_GRAY + getCPUModel());
-
-        Iris.info("Process Threads: " + getCPUThreads());
-        Iris.info("Process Memory: " + getHardware.getProcessMemory() + " MB");
+        Iris.info("Java: " + getJava());
+        if (!instance.getServer().getVersion().contains("Purpur")) {
+            if (instance.getServer().getVersion().contains("Spigot") && instance.getServer().getVersion().contains("Bukkit")) {
+                 Iris.info(C.RED + " Iris requires paper or above to function properly..");
+            } else {
+                Iris.info(C.YELLOW + "Purpur is recommended to use with iris.");
+            }
+        }
         if (getHardware.getProcessMemory() < 5999) {
             Iris.warn("6GB+ Ram is recommended");
+            Iris.warn("Process Memory: " + getHardware.getProcessMemory() + " MB");
         }
-        Iris.info("Bukkit version: " + Bukkit.getBukkitVersion());
-        Iris.info("Java version: " + getJavaVersion());
+        Iris.info("Bukkit distro: " + Bukkit.getName());
         Iris.info("Custom Biomes: " + INMS.get().countCustomBiomes());
         setupChecks();
         printPacks();
@@ -833,5 +896,34 @@ public class Iris extends VolmitPlugin implements Listener {
         } catch (IOException | JsonParseException ignored) {
         }
         Iris.info("  " + dimName + " v" + version);
+    }
+
+    public int getIrisVersion() {
+        String input = Iris.instance.getDescription().getVersion();
+        int hyphenIndex = input.indexOf('-');
+        if (hyphenIndex != -1) {
+            String result = input.substring(0, hyphenIndex);
+            result = result.replaceAll("\\.", "");
+            return Integer.parseInt(result);
+        }
+        return -1;
+    }
+
+    public int getMCVersion() {
+        try {
+            String version = Bukkit.getVersion();
+            Matcher matcher = Pattern.compile("\\(MC: ([\\d.]+)\\)").matcher(version);
+            if (matcher.find()) {
+                version = matcher.group(1).replaceAll("\\.", "");
+                long versionNumber = Long.parseLong(version);
+                if (versionNumber > Integer.MAX_VALUE) {
+                    return -1;
+                }
+                return (int) versionNumber;
+            }
+            return -1;
+        } catch (Exception e) {
+            return -1;
+        }
     }
 }

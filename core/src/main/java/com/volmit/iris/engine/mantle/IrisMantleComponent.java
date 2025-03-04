@@ -20,9 +20,14 @@ package com.volmit.iris.engine.mantle;
 
 import com.volmit.iris.util.mantle.MantleFlag;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
+import lombok.ToString;
 
 @Data
+@EqualsAndHashCode(exclude = "engineMantle")
+@ToString(exclude = "engineMantle")
 public abstract class IrisMantleComponent implements MantleComponent {
     private final EngineMantle engineMantle;
     private final MantleFlag flag;
+    private final int priority;
 }

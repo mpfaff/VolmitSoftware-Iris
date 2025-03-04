@@ -19,6 +19,7 @@
 package com.volmit.iris.core.service;
 
 import com.volmit.iris.Iris;
+import com.volmit.iris.core.IrisSettings;
 import com.volmit.iris.core.loader.IrisData;
 import com.volmit.iris.core.tools.IrisToolbelt;
 import com.volmit.iris.engine.framework.Engine;
@@ -39,6 +40,7 @@ import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 public class BoardSVC implements IrisService, BoardProvider {
     private final KMap<Player, PlayerBoard> boards = new KMap<>();
@@ -103,11 +105,11 @@ public class BoardSVC implements IrisService, BoardProvider {
     @Data
     public static class PlayerBoard {
         private final Player player;
-        private final KList<String> lines;
+        private final CopyOnWriteArrayList<String> lines;
 
         public PlayerBoard(Player player) {
             this.player = player;
-            this.lines = new KList<>();
+            this.lines = new CopyOnWriteArrayList<>();
             update();
         }
 
@@ -124,17 +126,32 @@ public class BoardSVC implements IrisService, BoardProvider {
                 int y = player.getLocation().getBlockY() - player.getWorld().getMinHeight();
                 int z = player.getLocation().getBlockZ();
 
-                lines.add("&7&m                   ");
-                lines.add(C.GREEN + "Speed" + C.GRAY + ":  " + Form.f(engine.getGeneratedPerSecond(), 0) + "/s " + Form.duration(1000D / engine.getGeneratedPerSecond(), 0));
-                lines.add(C.AQUA + "Cache" + C.GRAY + ": " + Form.f(IrisData.cacheSize()));
-                lines.add(C.AQUA + "Mantle" + C.GRAY + ": " + engine.getMantle().getLoadedRegionCount());
-                lines.add("&7&m                   ");
-                lines.add(C.AQUA + "Region" + C.GRAY + ": " + engine.getRegion(x, z).getName());
-                lines.add(C.AQUA + "Biome" + C.GRAY + ":  " + engine.getBiomeOrMantle(x, y, z).getName());
-                lines.add(C.AQUA + "Height" + C.GRAY + ": " + Math.round(engine.getHeight(x, z) + player.getWorld().getMinHeight()));
-                lines.add(C.AQUA + "Slope" + C.GRAY + ":  " + Form.f(engine.getComplex().getSlopeStream().get(x, z), 2));
-                lines.add(C.AQUA + "BUD/s" + C.GRAY + ": " + Form.f(engine.getBlockUpdatesPerSecond()));
-                lines.add("&7&m                   ");
+                if(IrisSettings.get().getGeneral().debug){
+                    lines.add("&7&m                   ");
+                    lines.add(C.GREEN + "Speed" + C.GRAY + ":  " + Form.f(engine.getGeneratedPerSecond(), 0) + "/s " + Form.duration(1000D / engine.getGeneratedPerSecond(), 0));
+                    lines.add(C.AQUA + "Cache" + C.GRAY + ": " + Form.f(IrisData.cacheSize()));
+                    lines.add(C.AQUA + "Mantle" + C.GRAY + ": " + engine.getMantle().getLoadedRegionCount());
+                    lines.add(C.LIGHT_PURPLE + "Carving" + C.GRAY + ": " + engine.getMantle().isCarved(x,y,z));
+                    lines.add("&7&m                   ");
+                    lines.add(C.AQUA + "Region" + C.GRAY + ": " + engine.getRegion(x, z).getName());
+                    lines.add(C.AQUA + "Biome" + C.GRAY + ":  " + engine.getBiomeOrMantle(x, y, z).getName());
+                    lines.add(C.AQUA + "Height" + C.GRAY + ": " + Math.round(engine.getHeight(x, z)));
+                    lines.add(C.AQUA + "Slope" + C.GRAY + ":  " + Form.f(engine.getComplex().getSlopeStream().get(x, z), 2));
+                    lines.add(C.AQUA + "BUD/s" + C.GRAY + ": " + Form.f(engine.getBlockUpdatesPerSecond()));
+                    lines.add("&7&m                   ");
+                } else {
+                    lines.add("&7&m                   ");
+                    lines.add(C.GREEN + "Speed" + C.GRAY + ":  " + Form.f(engine.getGeneratedPerSecond(), 0) + "/s " + Form.duration(1000D / engine.getGeneratedPerSecond(), 0));
+                    lines.add(C.AQUA + "Cache" + C.GRAY + ": " + Form.f(IrisData.cacheSize()));
+                    lines.add(C.AQUA + "Mantle" + C.GRAY + ": " + engine.getMantle().getLoadedRegionCount());
+                    lines.add("&7&m                   ");
+                    lines.add(C.AQUA + "Region" + C.GRAY + ": " + engine.getRegion(x, z).getName());
+                    lines.add(C.AQUA + "Biome" + C.GRAY + ":  " + engine.getBiomeOrMantle(x, y, z).getName());
+                    lines.add(C.AQUA + "Height" + C.GRAY + ": " + Math.round(engine.getHeight(x, z)));
+                    lines.add(C.AQUA + "Slope" + C.GRAY + ":  " + Form.f(engine.getComplex().getSlopeStream().get(x, z), 2));
+                    lines.add(C.AQUA + "BUD/s" + C.GRAY + ": " + Form.f(engine.getBlockUpdatesPerSecond()));
+                    lines.add("&7&m                   ");
+                }
             }
         }
     }

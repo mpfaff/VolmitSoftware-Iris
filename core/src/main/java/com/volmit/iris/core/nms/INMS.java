@@ -23,7 +23,18 @@ import com.volmit.iris.core.IrisSettings;
 import com.volmit.iris.core.nms.v1X.NMSBinding1X;
 import org.bukkit.Bukkit;
 
+import java.util.Map;
+
 public class INMS {
+    private static final Map<String, String> REVISION = Map.of(
+            "1.20.5", "v1_20_R4",
+            "1.20.6", "v1_20_R4",
+            "1.21", "v1_21_R1",
+            "1.21.1", "v1_21_R1",
+            "1.21.2", "v1_21_R2",
+            "1.21.3", "v1_21_R2",
+            "1.21.4", "v1_21_R3"
+    );
     //@done
     private static final INMSBinding binding = bind();
 
@@ -37,7 +48,12 @@ public class INMS {
         }
 
         try {
-            return Bukkit.getServer().getClass().getCanonicalName().split("\\Q.\\E")[3];
+            String name = Bukkit.getServer().getClass().getCanonicalName();
+            if (name.equals("org.bukkit.craftbukkit.CraftServer")) {
+                return REVISION.getOrDefault(Bukkit.getServer().getBukkitVersion().split("-")[0], "BUKKIT");
+            } else {
+                return name.split("\\Q.\\E")[3];
+            }
         } catch (Throwable e) {
             Iris.reportError(e);
             Iris.error("Failed to determine server nms version!");

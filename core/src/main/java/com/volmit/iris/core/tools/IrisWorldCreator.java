@@ -19,17 +19,21 @@
 package com.volmit.iris.core.tools;
 
 import com.volmit.iris.core.loader.IrisData;
-import com.volmit.iris.engine.object.IrisDimension;
-import com.volmit.iris.engine.object.IrisWorld;
+import com.volmit.iris.engine.object.*;
 import com.volmit.iris.engine.platform.BukkitChunkGenerator;
+import com.volmit.iris.util.reflect.WrappedField;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
 import org.bukkit.WorldCreator;
+import org.bukkit.WorldType;
 import org.bukkit.generator.ChunkGenerator;
+import sun.misc.Unsafe;
 
 import java.io.File;
 
 public class IrisWorldCreator {
+    public static final WorldType IRIS;
+
     private String name;
     private boolean studio = false;
     private String dimensionName = null;
@@ -79,7 +83,9 @@ public class IrisWorldCreator {
                 ? dim.getLoader().getDataFolder() :
                 new File(w.worldFolder(), "iris/pack"), dimensionName);
 
+
         return new WorldCreator(name)
+                .type(IRIS)
                 .environment(findEnvironment())
                 .generateStructures(true)
                 .generator(g).seed(seed);
@@ -97,5 +103,18 @@ public class IrisWorldCreator {
     public IrisWorldCreator studio(boolean studio) {
         this.studio = studio;
         return this;
+    }
+
+    static {
+        try {
+            var unsafe = new WrappedField<Unsafe, Unsafe>(Unsafe.class, "theUnsafe").get();
+            var iris = (WorldType) unsafe.allocateInstance(WorldType.class);
+            unsafe.putIntVolatile(iris, unsafe.objectFieldOffset(Enum.class.getDeclaredField("ordinal")), 0);
+            unsafe.putObjectVolatile(iris, unsafe.objectFieldOffset(Enum.class.getDeclaredField("name")), "IRIS");
+
+            IRIS = iris;
+        } catch (Throwable e) {
+            throw new ExceptionInInitializerError(e);
+        }
     }
 }

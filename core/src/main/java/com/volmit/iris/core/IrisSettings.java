@@ -24,7 +24,10 @@ import com.volmit.iris.util.io.IO;
 import com.volmit.iris.util.json.JSONException;
 import com.volmit.iris.util.json.JSONObject;
 import com.volmit.iris.util.plugin.VolmitSender;
+import com.volmit.iris.util.scheduling.ChronoLatch;
+import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 import java.io.File;
 import java.io.IOException;
@@ -41,6 +44,7 @@ public class IrisSettings {
     private IrisSettingsConcurrency concurrency = new IrisSettingsConcurrency();
     private IrisSettingsStudio studio = new IrisSettingsStudio();
     private IrisSettingsPerformance performance = new IrisSettingsPerformance();
+    private IrisSettingsUpdater updater = new IrisSettingsUpdater();
 
     public static int getThreadCount(int c) {
         return switch (c) {
@@ -135,7 +139,7 @@ public class IrisSettings {
 
     @Data
     public static class IrisSettingsPerformance {
-        public boolean trimMantleInStudio = false;
+        public boolean trimMantleInStudio = false; 
         public int mantleKeepAlive = 30;
         public int cacheSize = 4_096;
         public int resourceLoaderCacheSize = 1_024;
@@ -144,9 +148,32 @@ public class IrisSettings {
     }
 
     @Data
+    public static class IrisSettingsUpdater {
+        public double threadMultiplier = 2;
+        public double chunkLoadSensitivity = 0.7;
+        public MsRange emptyMsRange = new MsRange(80, 100);
+        public MsRange defaultMsRange = new MsRange(20, 40);
+
+        public double getThreadMultiplier() {
+            return Math.min(Math.abs(threadMultiplier), 0.1);
+        }
+
+        public double getChunkLoadSensitivity() {
+            return Math.min(chunkLoadSensitivity, 0.9);
+        }
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class MsRange {
+        public int min = 20;
+        public int max = 40;
+    }
+
+    @Data
     public static class IrisSettingsGeneral {
-        public boolean bootUnstable = false;
-        public boolean useIntegratedChunkHandler = false;
+        public boolean DoomsdayAnnihilationSelfDestructMode = false;
         public boolean commandSounds = true;
         public boolean debug = false;
         public boolean disableNMS = false;
@@ -171,6 +198,7 @@ public class IrisSettings {
     public static class IrisSettingsGUI {
         public boolean useServerLaunchedGuis = true;
         public boolean maximumPregenGuiFPS = false;
+        public boolean colorMode = true;
     }
 
     @Data

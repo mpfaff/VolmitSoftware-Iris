@@ -40,6 +40,8 @@ import com.volmit.iris.util.scheduling.ChronoLatch;
 import com.volmit.iris.util.scheduling.J;
 import com.volmit.iris.util.scheduling.PrecisionStopwatch;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
+import lombok.ToString;
 
 import java.io.*;
 import java.util.Locale;
@@ -52,6 +54,8 @@ import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
 @Data
+@EqualsAndHashCode(exclude = "manager")
+@ToString(exclude = "manager")
 public class ResourceLoader<T extends IrisRegistrant> implements MeteredCache {
     public static final AtomicDouble tlt = new AtomicDouble(0);
     private static final int CACHE_SIZE = 100000;
@@ -358,7 +362,12 @@ public class ResourceLoader<T extends IrisRegistrant> implements MeteredCache {
             if (folderCache.get() == null) {
                 KList<File> fc = new KList<>();
 
-                for (File i : root.listFiles()) {
+                File[] files = root.listFiles();
+                if (files == null) {
+                    throw new IllegalStateException("Failed to list files in " + root);
+                }
+
+                for (File i : files) {
                     if (i.isDirectory()) {
                         if (i.getName().equals(folderName)) {
                             fc.add(i);

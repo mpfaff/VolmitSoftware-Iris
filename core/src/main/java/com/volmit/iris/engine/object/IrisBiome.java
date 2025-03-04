@@ -194,13 +194,14 @@ public class IrisBiome extends IrisRegistrant implements IRare {
         return getCustomDerivitives() != null && getCustomDerivitives().isNotEmpty();
     }
 
-    public double getGenLinkMax(String loadKey) {
+    public double getGenLinkMax(String loadKey, Engine engine) {
         Integer v = genCacheMax.aquire(() ->
         {
             KMap<String, Integer> l = new KMap<>();
 
             for (IrisBiomeGeneratorLink i : getGenerators()) {
                 l.put(i.getGenerator(), i.getMax());
+
             }
 
             return l;
@@ -209,7 +210,7 @@ public class IrisBiome extends IrisRegistrant implements IRare {
         return v == null ? 0 : v;
     }
 
-    public double getGenLinkMin(String loadKey) {
+    public double getGenLinkMin(String loadKey, Engine engine) {
         Integer v = genCacheMin.aquire(() ->
         {
             KMap<String, Integer> l = new KMap<>();
@@ -450,7 +451,7 @@ public class IrisBiome extends IrisRegistrant implements IRare {
         return real;
     }
 
-    public int getMaxHeight() {
+    public int getMaxHeight(Engine engine) {
         return maxHeight.aquire(() ->
         {
             int maxHeight = 0;
@@ -463,7 +464,7 @@ public class IrisBiome extends IrisRegistrant implements IRare {
         });
     }
 
-    public int getMaxWithObjectHeight(IrisData data) {
+    public int getMaxWithObjectHeight(IrisData data, Engine engine) {
         return maxWithObjectHeight.aquire(() ->
         {
             int maxHeight = 0;

@@ -24,6 +24,7 @@ import com.volmit.iris.Iris;
 import com.volmit.iris.core.ServerConfigurator;
 import com.volmit.iris.core.events.IrisEngineHotloadEvent;
 import com.volmit.iris.core.gui.PregeneratorJob;
+import com.volmit.iris.core.loader.ResourceLoader;
 import com.volmit.iris.core.nms.container.BlockPos;
 import com.volmit.iris.core.nms.container.Pair;
 import com.volmit.iris.core.project.IrisProject;
@@ -50,6 +51,8 @@ import com.volmit.iris.util.scheduling.ChronoLatch;
 import com.volmit.iris.util.scheduling.J;
 import com.volmit.iris.util.scheduling.PrecisionStopwatch;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
+import lombok.ToString;
 import org.bukkit.Material;
 import org.bukkit.block.Biome;
 import org.bukkit.block.data.BlockData;
@@ -59,11 +62,14 @@ import java.io.File;
 import java.io.IOException;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 @Data
+@EqualsAndHashCode(exclude = "context")
+@ToString(exclude = "context")
 public class IrisEngine implements Engine {
     private final AtomicInteger bud;
     private final AtomicInteger buds;
@@ -84,6 +90,7 @@ public class IrisEngine implements Engine {
     private final AtomicBoolean cleaning;
     private final ChronoLatch cleanLatch;
     private final SeedManager seedManager;
+    private CompletableFuture<Long> hash32;
     private EngineMode mode;
     private EngineEffects effects;
     private EngineExecutionEnvironment execution;
@@ -166,8 +173,17 @@ public class IrisEngine implements Engine {
             complex = new IrisComplex(this);
             execution = new IrisExecutionEnvironment(this);
             effects = new IrisEngineEffects(this);
+            hash32 = new CompletableFuture<>();
             setupMode();
             J.a(this::computeBiomeMaxes);
+            J.a(() -> {
+                File[] roots = getData().getLoaders()
+                        .values()
+                        .stream()
+                        .map(ResourceLoader::getRoot)
+                        .toArray(File[]::new);
+                hash32.complete(IO.hashRecursive(roots));
+            });
         } catch (Throwable e) {
             Iris.error("FAILED TO SETUP ENGINE!");
             e.printStackTrace();
@@ -246,23 +262,40 @@ public class IrisEngine implements Engine {
         return engineData.aquire(() -> {
             //TODO: Method this file
             File f = new File(getWorld().worldFolder(), "iris/engine-data/" + getDimension().getLoadKey() + ".json");
+            IrisEngineData data = null;
 
-            if (!f.exists()) {
+            if (f.exists()) {
                 try {
-                    f.getParentFile().mkdirs();
-                    IO.writeAll(f, new Gson().toJson(new IrisEngineData()));
+                    data = new Gson().fromJson(IO.readAll(f), IrisEngineData.class);
+                    if (data == null) {
+                        Iris.error("Failed to read Engine Data! Corrupted File? recreating...");
+                    }
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
             }
 
-            try {
-                return new Gson().fromJson(IO.readAll(f), IrisEngineData.class);
-            } catch (Throwable e) {
-                e.printStackTrace();
+            if (data == null) {
+                data = new IrisEngineData();
+                data.getStatistics().setVersion(Iris.instance.getIrisVersion());
+                data.getStatistics().setMCVersion(Iris.instance.getMCVersion());
+                data.getStatistics().setUpgradedVersion(Iris.instance.getIrisVersion());
+                if (data.getStatistics().getVersion() == -1 || data.getStatistics().getMCVersion() == -1 ) {
+                    Iris.error("Failed to setup Engine Data!");
+                }
+
+                if (f.getParentFile().exists() || f.getParentFile().mkdirs()) {
+                    try {
+                        IO.writeAll(f, new Gson().toJson(data));
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                } else {
+                    Iris.error("Failed to setup Engine Data!");
+                }
             }
 
-            return new IrisEngineData();
+            return data;
         });
     }
 
@@ -418,7 +451,6 @@ public class IrisEngine implements Engine {
 
         J.a(() -> {
             try {
-                getMantle().trim();
                 getData().getObjectLoader().clean();
             } catch (Throwable e) {
                 Iris.reportError(e);
@@ -517,5 +549,20 @@ public class IrisEngine implements Engine {
     @Override
     public int getCacheID() {
         return cacheId;
+    }
+
+    private boolean EngineSafe() {
+        // Todo: this has potential if done right
+        int EngineMCVersion = getEngineData().getStatistics().getMCVersion();
+        int EngineIrisVersion = getEngineData().getStatistics().getVersion();
+        int MinecraftVersion = Iris.instance.getMCVersion();
+        int IrisVersion = Iris.instance.getIrisVersion();
+        if (EngineIrisVersion != IrisVersion) {
+            return false;
+        }
+        if (EngineMCVersion != MinecraftVersion) {
+            return false;
+        }
+        return true;
     }
 }

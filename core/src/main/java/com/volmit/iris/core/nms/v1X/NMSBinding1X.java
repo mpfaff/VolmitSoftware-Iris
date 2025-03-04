@@ -20,21 +20,26 @@ package com.volmit.iris.core.nms.v1X;
 
 import com.volmit.iris.Iris;
 import com.volmit.iris.core.nms.INMSBinding;
-import com.volmit.iris.core.nms.container.BlockPos;
+import com.volmit.iris.core.nms.container.BiomeColor;
 import com.volmit.iris.engine.framework.Engine;
+import com.volmit.iris.util.collection.KList;
 import com.volmit.iris.util.collection.KMap;
 import com.volmit.iris.util.mantle.Mantle;
+import com.volmit.iris.util.math.Vector3d;
 import com.volmit.iris.util.nbt.mca.palette.MCABiomeContainer;
 import com.volmit.iris.util.nbt.mca.palette.MCAPaletteAccess;
 import com.volmit.iris.util.nbt.tag.CompoundTag;
-import org.bukkit.Chunk;
-import org.bukkit.Location;
-import org.bukkit.World;
+import org.bukkit.*;
 import org.bukkit.block.Biome;
-import org.bukkit.entity.Dolphin;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.EntityType;
+import org.bukkit.event.entity.CreatureSpawnEvent;
 import org.bukkit.generator.ChunkGenerator;
+import org.bukkit.generator.structure.Structure;
 import org.bukkit.inventory.ItemStack;
+
+import java.awt.Color;
+import java.util.stream.StreamSupport;
 
 public class NMSBinding1X implements INMSBinding {
     private static final boolean supportsCustomHeight = testCustomHeight();
@@ -55,14 +60,25 @@ public class NMSBinding1X implements INMSBinding {
     }
 
     @Override
+    public boolean hasTile(Material material) {
+        return false;
+    }
+
+    @Override
     public boolean hasTile(Location l) {
         return false;
     }
 
     @Override
-    public CompoundTag serializeTile(Location location) {
+    public KMap<String, Object> serializeTile(Location location) {
         return null;
     }
+
+    @Override
+    public void deserializeTile(KMap<String, Object> s, Location newPosition) {
+
+    }
+
 
     @Override
     public void injectBiomesFromMantle(Chunk e, Mantle mantle) {
@@ -75,18 +91,31 @@ public class NMSBinding1X implements INMSBinding {
     }
 
     @Override
-    public void setTreasurePos(Dolphin dolphin, BlockPos pos) {
-
-    }
-
-    @Override
     public void inject(long seed, Engine engine, World world) throws NoSuchFieldException, IllegalAccessException {
 
     }
 
-    @Override
-    public void deserializeTile(CompoundTag s, Location newPosition) {
+    public Vector3d getBoundingbox() {
+        return null;
+    }
 
+    @Override
+    public Entity spawnEntity(Location location, EntityType type, CreatureSpawnEvent.SpawnReason reason) {
+        return location.getWorld().spawnEntity(location, type);
+    }
+
+    @Override
+    public Color getBiomeColor(Location location, BiomeColor type) {
+        return Color.GREEN;
+    }
+
+    @Override
+    public KList<String> getStructureKeys() {
+        var list = StreamSupport.stream(Registry.STRUCTURE.spliterator(), false)
+                .map(Structure::getKey)
+                .map(NamespacedKey::toString)
+                .toList();
+        return new KList<>(list);
     }
 
     @Override
@@ -164,6 +193,11 @@ public class NMSBinding1X implements INMSBinding {
     }
 
     @Override
+    public KList<Biome> getBiomes() {
+        return new KList<>(Biome.values()).qdel(Biome.CUSTOM);
+    }
+
+    @Override
     public boolean isBukkit() {
         return true;
     }
@@ -195,6 +229,11 @@ public class NMSBinding1X implements INMSBinding {
     @Override
     public void forceBiomeInto(int x, int y, int z, Object somethingVeryDirty, ChunkGenerator.BiomeGrid chunk) {
 
+    }
+
+    @Override
+    public Vector3d getBoundingbox(org.bukkit.entity.EntityType entity) {
+      return null;
     }
 
     @Override

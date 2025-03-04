@@ -18,28 +18,37 @@
 
 package com.volmit.iris.core.nms;
 
+import com.volmit.iris.core.nms.container.BiomeColor;
+import com.volmit.iris.core.nms.datapack.DataVersion;
 import com.volmit.iris.engine.framework.Engine;
+import com.volmit.iris.util.collection.KList;
 import com.volmit.iris.util.collection.KMap;
 import com.volmit.iris.util.mantle.Mantle;
+import com.volmit.iris.util.math.Vector3d;
 import com.volmit.iris.util.nbt.mca.palette.MCABiomeContainer;
 import com.volmit.iris.util.nbt.mca.palette.MCAPaletteAccess;
 import com.volmit.iris.util.nbt.tag.CompoundTag;
-import org.bukkit.Chunk;
-import org.bukkit.Location;
-import org.bukkit.World;
-import org.bukkit.WorldCreator;
+import org.bukkit.*;
 import org.bukkit.block.Biome;
 import org.bukkit.entity.Dolphin;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.EntityType;
+import org.bukkit.event.entity.CreatureSpawnEvent;
 import org.bukkit.generator.ChunkGenerator;
+import org.bukkit.generator.structure.Structure;
 import org.bukkit.inventory.ItemStack;
 
+import java.awt.*;
+import java.awt.Color;
+
 public interface INMSBinding {
+    boolean hasTile(Material material);
+
     boolean hasTile(Location l);
 
-    CompoundTag serializeTile(Location location);
+    KMap<String, Object> serializeTile(Location location);
 
-    void deserializeTile(CompoundTag s, Location newPosition);
+    void deserializeTile(KMap<String, Object> s, Location newPosition);
 
     CompoundTag serializeEntity(Entity location);
 
@@ -71,6 +80,8 @@ public interface INMSBinding {
 
     Object getBiomeBase(Object registry, Biome biome);
 
+    KList<Biome> getBiomes();
+
     boolean isBukkit();
 
     int getBiomeId(Biome biome);
@@ -97,7 +108,21 @@ public interface INMSBinding {
 
     ItemStack applyCustomNbt(ItemStack itemStack, KMap<String, Object> customNbt) throws IllegalArgumentException;
 
-    void setTreasurePos(Dolphin dolphin, com.volmit.iris.core.nms.container.BlockPos pos);
-
     void inject(long seed, Engine engine, World world) throws NoSuchFieldException, IllegalAccessException;
+
+    Vector3d getBoundingbox(org.bukkit.entity.EntityType entity);
+    
+    Entity spawnEntity(Location location, EntityType type, CreatureSpawnEvent.SpawnReason reason);
+
+    Color getBiomeColor(Location location, BiomeColor type);
+
+    default DataVersion getDataVersion() {
+        return DataVersion.V1192;
+    }
+
+    default int getSpawnChunkCount(World world) {
+        return 441;
+    }
+
+    KList<String> getStructureKeys();
 }

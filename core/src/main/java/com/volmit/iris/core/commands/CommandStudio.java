@@ -29,9 +29,11 @@ import com.volmit.iris.core.service.StudioSVC;
 import com.volmit.iris.core.tools.IrisToolbelt;
 import com.volmit.iris.engine.framework.Engine;
 import com.volmit.iris.engine.object.*;
+import com.volmit.iris.engine.platform.PlatformChunkGenerator;
 import com.volmit.iris.util.collection.KList;
 import com.volmit.iris.util.collection.KMap;
 import com.volmit.iris.util.collection.KSet;
+import com.volmit.iris.util.decree.DecreeContext;
 import com.volmit.iris.util.decree.DecreeExecutor;
 import com.volmit.iris.util.decree.DecreeOrigin;
 import com.volmit.iris.util.decree.annotations.Decree;
@@ -45,11 +47,17 @@ import com.volmit.iris.util.io.IO;
 import com.volmit.iris.util.json.JSONArray;
 import com.volmit.iris.util.json.JSONObject;
 import com.volmit.iris.util.math.M;
+import com.volmit.iris.util.math.Position2;
 import com.volmit.iris.util.math.RNG;
 import com.volmit.iris.util.math.Spiraler;
 import com.volmit.iris.util.noise.CNG;
+import com.volmit.iris.util.parallel.BurstExecutor;
+import com.volmit.iris.util.parallel.MultiBurst;
+import com.volmit.iris.util.plugin.VolmitSender;
+import com.volmit.iris.util.scheduling.J;
 import com.volmit.iris.util.scheduling.O;
 import com.volmit.iris.util.scheduling.PrecisionStopwatch;
+import com.volmit.iris.util.scheduling.jobs.QueueJob;
 import io.papermc.lib.PaperLib;
 import org.bukkit.*;
 import org.bukkit.event.inventory.InventoryType;
@@ -65,14 +73,19 @@ import java.nio.file.Files;
 import java.nio.file.attribute.FileTime;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.Objects;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
 @Decree(name = "studio", aliases = {"std", "s"}, description = "Studio Commands", studio = true)
 public class CommandStudio implements DecreeExecutor {
     private CommandFind find;
     private CommandEdit edit;
+    //private CommandDeepSearch deepSearch;
 
     public static String hrf(Duration duration) {
         return duration.toString().substring(2).replaceAll("(\\d[HMS])(?!$)", "$1 ").toLowerCase();
@@ -143,11 +156,82 @@ public class CommandStudio implements DecreeExecutor {
         sender().sendMessage(C.GREEN + "The \"" + dimension.getName() + "\" pack has version: " + dimension.getVersion());
     }
 
+    @Decree(name = "regen", description = "Regenerate nearby chunks.", aliases = "rg", sync = true, origin = DecreeOrigin.PLAYER)
+    public void regen(
+            @Param(name = "radius", description = "The radius of nearby cunks", defaultValue = "5")
+            int radius
+    ) {
+        if (IrisToolbelt.isIrisWorld(player().getWorld())) {
+            VolmitSender sender = sender();
+            J.a(() -> {
+                DecreeContext.touch(sender);
+                PlatformChunkGenerator plat = IrisToolbelt.access(player().getWorld());
+                Engine engine = plat.getEngine();
+                try {
+                    Chunk cx = player().getLocation().getChunk();
+                    KList<Runnable> js = new KList<>();
+                    BurstExecutor b = MultiBurst.burst.burst();
+                    b.setMulticore(false);
+                    int rad = engine.getMantle().getRadius();
+                    for (int i = -(radius + rad); i <= radius + rad; i++) {
+                        for (int j = -(radius + rad); j <= radius + rad; j++) {
+                            engine.getMantle().getMantle().deleteChunk(i + cx.getX(), j + cx.getZ());
+                        }
+                    }
+
+                    for (int i = -radius; i <= radius; i++) {
+                        for (int j = -radius; j <= radius; j++) {
+                            int finalJ = j;
+                            int finalI = i;
+                            b.queue(() -> plat.injectChunkReplacement(player().getWorld(), finalI + cx.getX(), finalJ + cx.getZ(), (f) -> {
+                                synchronized (js) {
+                                    js.add(f);
+                                }
+                            }));
+                        }
+                    }
+
+                    b.complete();
+                    sender().sendMessage(C.GREEN + "Regenerating " + Form.f(js.size()) + " Sections");
+                    QueueJob<Runnable> r = new QueueJob<>() {
+                        final KList<Future<?>> futures = new KList<>();
+
+                        @Override
+                        public void execute(Runnable runnable) {
+                            futures.add(J.sfut(runnable));
+
+                            if (futures.size() > 64) {
+                                while (futures.isNotEmpty()) {
+                                    try {
+                                        futures.remove(0).get();
+                                    } catch (InterruptedException | ExecutionException e) {
+                                        e.printStackTrace();
+                                    }
+                                }
+                            }
+                        }
+
+                        @Override
+                        public String getName() {
+                            return "Regenerating";
+                        }
+                    };
+                    r.queue(js);
+                    r.execute(sender());
+                } catch (Throwable e) {
+                    sender().sendMessage("Unable to parse view-distance");
+                }
+            });
+        } else {
+            sender().sendMessage(C.RED + "You must be in an Iris World to use regen!");
+        }
+    }
+
     @Decree(description = "Convert objects in the \"convert\" folder")
     public void convert() {
         Iris.service(ConversionSVC.class).check(sender());
+        //IrisConverter.convertSchematics(sender());
     }
-
 
     @Decree(description = "Execute a script", aliases = "run", origin = DecreeOrigin.PLAYER)
     public void execute(
@@ -218,7 +302,7 @@ public class CommandStudio implements DecreeExecutor {
         Inventory inv = Bukkit.createInventory(null, 27 * 2);
 
         try {
-            engine().addItems(true, inv, RNG.r, tables, InventorySlotType.STORAGE, player().getLocation().getBlockX(), player().getLocation().getBlockY(), player().getLocation().getBlockZ(), 1);
+            engine().addItems(true, inv, RNG.r, tables, InventorySlotType.STORAGE, player().getWorld(), player().getLocation().getBlockX(), player().getLocation().getBlockY(), player().getLocation().getBlockZ(), 1);
         } catch (Throwable e) {
             Iris.reportError(e);
             sender().sendMessage(C.RED + "Cannot add items to virtual inventory because of: " + e.getMessage());
@@ -241,12 +325,79 @@ public class CommandStudio implements DecreeExecutor {
                 inv.clear();
             }
 
-            engine().addItems(true, inv, new RNG(RNG.r.imax()), tables, InventorySlotType.STORAGE, player().getLocation().getBlockX(), player().getLocation().getBlockY(), player().getLocation().getBlockZ(), 1);
+            engine().addItems(true, inv, new RNG(RNG.r.imax()), tables, InventorySlotType.STORAGE, player().getWorld(), player().getLocation().getBlockX(), player().getLocation().getBlockY(), player().getLocation().getBlockZ(), 1);
         }, 0, fast ? 5 : 35));
 
         sender().sendMessage(C.GREEN + "Opening inventory now!");
         player().openInventory(inv);
     }
+
+
+    @Decree(description = "Get all structures in a radius of chunks", aliases = "dist", origin = DecreeOrigin.PLAYER)
+    public void distances(@Param(description = "The radius in chunks") int radius) {
+        var engine = engine();
+        if (engine == null) {
+            sender().sendMessage(C.RED + "Only works in an Iris world!");
+            return;
+        }
+        var sender = sender();
+        int d = radius * 2;
+        KMap<String, KList<Position2>> data = new KMap<>();
+        var multiBurst = new MultiBurst("Distance Sampler", Thread.MIN_PRIORITY);
+        var executor = multiBurst.burst(radius * radius);
+
+        sender.sendMessage(C.GRAY + "Generating data...");
+        var loc = player().getLocation();
+        int totalTasks = d * d;
+        AtomicInteger completedTasks = new AtomicInteger(0);
+        int c = J.ar(() -> {
+            sender.sendProgress((double) completedTasks.get() / totalTasks, "Finding structures");
+        }, 0);
+
+        new Spiraler(d, d, (x, z) -> executor.queue(() -> {
+            var struct = engine.getStructureAt(x, z);
+            if (struct != null) {
+                data.computeIfAbsent(struct.getLoadKey(), (k) -> new KList<>()).add(new Position2(x, z));
+            }
+            completedTasks.incrementAndGet();
+        })).setOffset(loc.getBlockX(), loc.getBlockZ()).drain();
+
+        executor.complete();
+        multiBurst.close();
+        J.car(c);
+
+        for (var key : data.keySet()) {
+            var list = data.get(key);
+            KList<Long> distances = new KList<>(list.size() - 1);
+            for (int i = 0; i < list.size(); i++) {
+                var pos = list.get(i);
+                double dist = Integer.MAX_VALUE;
+                for (var p : list) {
+                    if (p.equals(pos)) continue;
+                    dist = Math.min(dist, Math.sqrt(Math.pow(pos.getX() - p.getX(), 2) + Math.pow(pos.getZ() - p.getZ(), 2)));
+                }
+                if (dist == Integer.MAX_VALUE) continue;
+                distances.add(Math.round(dist * 16));
+            }
+            long[] array = new long[distances.size()];
+            for (int i = 0; i < distances.size(); i++) {
+                array[i] = distances.get(i);
+            }
+            Arrays.sort(array);
+            long min = array.length > 0 ? array[0] : 0;
+            long max = array.length > 0 ? array[array.length - 1] : 0;
+            long sum = Arrays.stream(array).sum();
+            long avg = array.length > 0 ? Math.round(sum / (double) array.length) : 0;
+            String msg = "%s: %s => min: %s/max: %s -> avg: %s".formatted(key, list.size(), min, max, avg);
+            sender.sendMessage(msg);
+        }
+        if (data.isEmpty()) {
+            sender.sendMessage(C.RED + "No data found!");
+        } else {
+            sender.sendMessage(C.GREEN + "Done!");
+        }
+    }
+
 
     @Decree(description = "Render a world map (External GUI)", aliases = "render")
     public void map(

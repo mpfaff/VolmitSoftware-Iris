@@ -3,8 +3,10 @@ package com.volmit.iris.core.link;
 import com.ssomar.score.api.executableitems.ExecutableItemsAPI;
 import com.volmit.iris.Iris;
 import com.volmit.iris.util.collection.KList;
+import com.volmit.iris.util.collection.KMap;
 import org.bukkit.block.data.BlockData;
 import org.bukkit.inventory.ItemStack;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.MissingResourceException;
 import java.util.Optional;
@@ -19,23 +21,27 @@ public class ExecutableItemsDataProvider extends ExternalDataProvider {
         Iris.info("Setting up ExecutableItems Link...");
     }
 
+    @NotNull
     @Override
-    public BlockData getBlockData(Identifier blockId) throws MissingResourceException {
+    public BlockData getBlockData(@NotNull Identifier blockId, @NotNull KMap<String, String> state) throws MissingResourceException {
         throw new MissingResourceException("Failed to find BlockData!", blockId.namespace(), blockId.key());
     }
 
+    @NotNull
     @Override
-    public ItemStack getItemStack(Identifier itemId) throws MissingResourceException {
+    public ItemStack getItemStack(@NotNull Identifier itemId, @NotNull KMap<String, Object> customNbt) throws MissingResourceException {
         return ExecutableItemsAPI.getExecutableItemsManager().getExecutableItem(itemId.key())
                 .map(item -> item.buildItem(1, Optional.empty()))
                 .orElseThrow(() -> new MissingResourceException("Failed to find ItemData!", itemId.namespace(), itemId.key()));
     }
 
+    @NotNull
     @Override
     public Identifier[] getBlockTypes() {
         return new Identifier[0];
     }
 
+    @NotNull
     @Override
     public Identifier[] getItemTypes() {
         KList<Identifier> names = new KList<>();
@@ -52,7 +58,7 @@ public class ExecutableItemsDataProvider extends ExternalDataProvider {
     }
 
     @Override
-    public boolean isValidProvider(Identifier key, boolean isItem) {
+    public boolean isValidProvider(@NotNull Identifier key, boolean isItem) {
         return key.namespace().equalsIgnoreCase("executable_items") && isItem;
     }
 }

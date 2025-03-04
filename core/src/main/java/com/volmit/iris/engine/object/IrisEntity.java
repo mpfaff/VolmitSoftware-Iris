@@ -21,6 +21,7 @@ package com.volmit.iris.engine.object;
 import com.volmit.iris.Iris;
 import com.volmit.iris.core.IrisSettings;
 import com.volmit.iris.core.loader.IrisRegistrant;
+import com.volmit.iris.core.nms.INMS;
 import com.volmit.iris.engine.framework.Engine;
 import com.volmit.iris.engine.object.annotations.*;
 import com.volmit.iris.util.collection.KList;
@@ -41,6 +42,7 @@ import org.bukkit.*;
 import org.bukkit.attribute.Attributable;
 import org.bukkit.entity.*;
 import org.bukkit.entity.Panda.Gene;
+import org.bukkit.event.entity.CreatureSpawnEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.loot.LootContext;
@@ -54,6 +56,8 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static com.volmit.iris.util.data.registry.Particles.ITEM;
+
 @SuppressWarnings("ALL")
 @Accessors(chain = true)
 @NoArgsConstructor
@@ -66,6 +70,9 @@ public class IrisEntity extends IrisRegistrant {
     @Required
     @Desc("The type of entity to spawn. To spawn a mythic mob, set this type to unknown and define mythic type.")
     private EntityType type = EntityType.UNKNOWN;
+
+    @Desc("The SpawnReason to spawn the entity with.")
+    private CreatureSpawnEvent.SpawnReason reason = CreatureSpawnEvent.SpawnReason.NATURAL;
 
     @Desc("The custom name of this entity")
     private String customName = "";
@@ -264,7 +271,7 @@ public class IrisEntity extends IrisRegistrant {
 
                         for (String fi : getLoot().getTables()) {
                             IrisLootTable i = gen.getData().getLootLoader().load(fi);
-                            items.addAll(i.getLoot(gen.isStudio(), rng.nextParallelRNG(345911), InventorySlotType.STORAGE, finalAt.getBlockX(), finalAt.getBlockY(), finalAt.getBlockZ()));
+                            items.addAll(i.getLoot(gen.isStudio(), rng.nextParallelRNG(345911), InventorySlotType.STORAGE, finalAt.getWorld(), finalAt.getBlockX(), finalAt.getBlockY(), finalAt.getBlockZ()));
                         }
 
                         return items;
@@ -381,7 +388,7 @@ public class IrisEntity extends IrisRegistrant {
                     if (e.getLocation().getBlock().getType().isSolid() || ((LivingEntity) e).getEyeLocation().getBlock().getType().isSolid()) {
                         e.teleport(start.add(new Vector(0, 0.1, 0)));
                         ItemStack itemCrackData = new ItemStack(((LivingEntity) e).getEyeLocation().clone().subtract(0, 2, 0).getBlock().getBlockData().getMaterial());
-                        e.getWorld().spawnParticle(Particle.ITEM_CRACK, ((LivingEntity) e).getEyeLocation(), 6, 0.2, 0.4, 0.2, 0.06f, itemCrackData);
+                        e.getWorld().spawnParticle(ITEM, ((LivingEntity) e).getEyeLocation(), 6, 0.2, 0.4, 0.2, 0.06f, itemCrackData);
                         if (M.r(0.2)) {
                             e.getWorld().playSound(e.getLocation(), Sound.BLOCK_CHORUS_FLOWER_GROW, 0.8f, 0.1f);
                         }
@@ -457,7 +464,7 @@ public class IrisEntity extends IrisRegistrant {
         }
 
 
-        return at.getWorld().spawnEntity(at, getType());
+        return INMS.get().spawnEntity(at, getType(), getReason());
     }
 
     public boolean isCitizens() {

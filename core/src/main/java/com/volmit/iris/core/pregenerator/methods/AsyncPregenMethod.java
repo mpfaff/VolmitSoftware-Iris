@@ -22,21 +22,24 @@ import com.volmit.iris.Iris;
 import com.volmit.iris.core.pregenerator.PregenListener;
 import com.volmit.iris.core.pregenerator.PregeneratorMethod;
 import com.volmit.iris.core.tools.IrisToolbelt;
-import com.volmit.iris.util.collection.KList;
+import com.volmit.iris.util.collection.KMap;
 import com.volmit.iris.util.mantle.Mantle;
+import com.volmit.iris.util.math.M;
 import com.volmit.iris.util.parallel.MultiBurst;
 import com.volmit.iris.util.scheduling.J;
 import io.papermc.lib.PaperLib;
 import org.bukkit.Chunk;
 import org.bukkit.World;
 
-import java.util.Objects;
-import java.util.concurrent.Future;
+import java.util.ArrayList;
+import java.util.Map;
+import java.util.concurrent.Semaphore;
 
 public class AsyncPregenMethod implements PregeneratorMethod {
     private final World world;
     private final MultiBurst burst;
-    private final KList<Future<?>> future;
+    private final Semaphore semaphore;
+    private final Map<Chunk, Long> lastUse;
 
     public AsyncPregenMethod(World world, int threads) {
         if (!PaperLib.isPaper()) {
@@ -44,8 +47,9 @@ public class AsyncPregenMethod implements PregeneratorMethod {
         }
 
         this.world = world;
-        burst = MultiBurst.burst;
-        future = new KList<>(1024);
+        burst = new MultiBurst("Iris Async Pregen", Thread.MIN_PRIORITY);
+        semaphore = new Semaphore(256);
+        this.lastUse = new KMap<>();
     }
 
     private void unloadAndSaveAllChunks() {
@@ -56,8 +60,12 @@ public class AsyncPregenMethod implements PregeneratorMethod {
                     return;
                 }
 
-                for (Chunk i : world.getLoadedChunks()) {
-                    i.unload(true);
+                for (Chunk i : new ArrayList<>(lastUse.keySet())) {
+                    Long lastUseTime = lastUse.get(i);
+                    if (!i.isLoaded() || (lastUseTime != null && M.ms() - lastUseTime >= 10000)) {
+                        i.unload();
+                        lastUse.remove(i);
+                    }
                 }
                 world.save();
             }).get();
@@ -68,53 +76,17 @@ public class AsyncPregenMethod implements PregeneratorMethod {
 
     private void completeChunk(int x, int z, PregenListener listener) {
         try {
-            future.add(PaperLib.getChunkAtAsync(world, x, z, true).thenApply((i) -> {
-                if (i == null) {
-
-                }
-
+            PaperLib.getChunkAtAsync(world, x, z, true).thenAccept((i) -> {
+                lastUse.put(i, M.ms());
                 listener.onChunkGenerated(x, z);
                 listener.onChunkCleaned(x, z);
-                return 0;
-            }));
+            }).get();
+        } catch (InterruptedException ignored) {
         } catch (Throwable e) {
             e.printStackTrace();
+        } finally {
+            semaphore.release();
         }
-    }
-
-    private void waitForChunksPartial(int maxWaiting) {
-        future.removeWhere(Objects::isNull);
-
-        while (future.size() > maxWaiting) {
-            try {
-                Future<?> i = future.remove(0);
-
-                if (i == null) {
-                    continue;
-                }
-
-                i.get();
-            } catch (Throwable e) {
-                e.printStackTrace();
-            }
-        }
-    }
-
-    private void waitForChunks() {
-        for (Future<?> i : future.copy()) {
-            if (i == null) {
-                continue;
-            }
-
-            try {
-                i.get();
-                future.remove(i);
-            } catch (Throwable e) {
-                e.printStackTrace();
-            }
-        }
-
-        future.removeWhere(Objects::isNull);
     }
 
     @Override
@@ -129,13 +101,13 @@ public class AsyncPregenMethod implements PregeneratorMethod {
 
     @Override
     public void close() {
-        waitForChunks();
+        semaphore.acquireUninterruptibly(256);
         unloadAndSaveAllChunks();
+        burst.close();
     }
 
     @Override
     public void save() {
-        waitForChunksPartial(256);
         unloadAndSaveAllChunks();
     }
 
@@ -152,10 +124,12 @@ public class AsyncPregenMethod implements PregeneratorMethod {
     @Override
     public void generateChunk(int x, int z, PregenListener listener) {
         listener.onChunkGenerating(x, z);
-        if (future.size() > 256) {
-            waitForChunksPartial(256);
+        try {
+            semaphore.acquire();
+        } catch (InterruptedException e) {
+            return;
         }
-        future.add(burst.complete(() -> completeChunk(x, z, listener)));
+        burst.complete(() -> completeChunk(x, z, listener));
     }
 
     @Override

@@ -63,7 +63,12 @@ public class StudioSVC implements IrisService {
 
             if (!f.exists()) {
                 Iris.info("Downloading Default Pack " + pack);
-                downloadSearch(Iris.getSender(), pack, false);
+                if (pack.equals("overworld")) {
+                    String url = "https://github.com/IrisDimensions/overworld/releases/download/" + Iris.OVERWORLD_TAG + "/overworld.zip";
+                    Iris.service(StudioSVC.class).downloadRelease(Iris.getSender(), url, false, false);
+                } else {
+                    downloadSearch(Iris.getSender(), pack, false);
+                }
             }
         });
     }
@@ -232,7 +237,7 @@ public class StudioSVC implements IrisService {
         }
 
         try {
-            dir = zipFiles.length == 1 && zipFiles[0].isDirectory() ? zipFiles[0] : null;
+            dir = zipFiles.length > 1 ? work : zipFiles[0].isDirectory() ? zipFiles[0] : null;
         } catch (NullPointerException e) {
             Iris.reportError(e);
             sender.sendMessage("Error when finding home directory. Are there any non-text characters in the file name?");

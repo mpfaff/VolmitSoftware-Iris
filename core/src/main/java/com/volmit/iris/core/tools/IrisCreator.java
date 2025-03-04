@@ -26,7 +26,6 @@ import com.volmit.iris.core.pregenerator.PregenTask;
 import com.volmit.iris.core.service.StudioSVC;
 import com.volmit.iris.engine.object.IrisDimension;
 import com.volmit.iris.engine.platform.PlatformChunkGenerator;
-import com.volmit.iris.engine.safeguard.UtilsSFG;
 import com.volmit.iris.util.exceptions.IrisException;
 import com.volmit.iris.util.format.C;
 import com.volmit.iris.util.format.Form;
@@ -45,9 +44,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
-
-import static com.volmit.iris.core.tools.IrisPackBenchmarking.benchmark;
-import static com.volmit.iris.engine.safeguard.IrisSafeguard.unstablemode;
 
 /**
  * Makes it a lot easier to setup an engine, world, studio or whatever
@@ -83,6 +79,10 @@ public class IrisCreator {
      * the world itself. Studio worlds are deleted when they are unloaded.
      */
     private boolean studio = false;
+    /**
+     * Benchmark mode
+     */
+    private boolean benchmark = false;
 
     public static boolean removeFromBukkitYml(String name) throws IOException {
         YamlConfiguration yml = YamlConfiguration.loadConfiguration(BUKKIT_YML);
@@ -107,15 +107,8 @@ public class IrisCreator {
      * @return the IrisAccess
      * @throws IrisException shit happens
      */
-    IrisPackBenchmarking PackBench = new IrisPackBenchmarking();
+
     public World create() throws IrisException {
-        if (unstablemode){
-            Iris.info(C.RED + "Your server is experiencing an incompatibility with the Iris plugin. Please rectify this problem to avoid further complications.");
-            Iris.info(C.RED + "----------------------------------------------------------------");
-            Iris.info(C.RED + "Operation ran: Loading Iris World..");
-            UtilsSFG.printIncompatibleWarnings();
-            Iris.info(C.RED + "----------------------------------------------------------------");
-        }
         if (Bukkit.isPrimaryThread()) {
             throw new IrisException("You cannot invoke create() on the main thread.");
         }
@@ -129,14 +122,11 @@ public class IrisCreator {
         if (sender == null)
             sender = Iris.getSender();
 
-        if (!studio()) {
-            Iris.service(StudioSVC.class).installIntoWorld(sender, d.getLoadKey(), new File(Bukkit.getWorldContainer(), name()));
-        }
-        if (benchmark) {
+        if (!studio() || benchmark) {
             Iris.service(StudioSVC.class).installIntoWorld(sender, d.getLoadKey(), new File(Bukkit.getWorldContainer(), name()));
         }
 
-        PlatformChunkGenerator access = null;
+        PlatformChunkGenerator access;
         AtomicReference<World> world = new AtomicReference<>();
         AtomicDouble pp = new AtomicDouble(0);
         O<Boolean> done = new O<>();
@@ -154,7 +144,6 @@ public class IrisCreator {
 
         J.a(() ->
         {
-            int req = 441;
             Supplier<Integer> g = () -> {
                 if (finalAccess1 == null || finalAccess1.getEngine() == null) {
                     return 0;
@@ -162,6 +151,9 @@ public class IrisCreator {
                 return finalAccess1.getEngine().getGenerated();
             };
             if(!benchmark) {
+                if (finalAccess1 == null) return;
+                int req = finalAccess1.getSpawnChunks().join();
+
                 while (g.get() < req) {
                     double v = (double) g.get() / (double) req;
                     if (sender.isPlayer()) {
@@ -173,7 +165,6 @@ public class IrisCreator {
                     }
                 }
             }
-            //if (benchmark){loaded = true;}
         });
 
 
@@ -191,7 +182,7 @@ public class IrisCreator {
 
         done.set(true);
 
-        if (sender.isPlayer()) {
+        if (sender.isPlayer() && !benchmark) {
             J.s(() -> {
                 sender.player().teleport(new Location(world.get(), 0, world.get().getHighestBlockYAt(0, 0), 0));
             });
